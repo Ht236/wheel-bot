@@ -1,78 +1,551 @@
-<!DOCTYPE html>
+ф<!DOCTYPE html>
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Колесо Фортуны</title>
     
-    <!-- Подключаем Eruda для отладки на телефоне (появится шестеренка) -->
     <script src="//cdn.jsdelivr.net/npm/eruda"></script>
     <script>eruda.init();</script>
-
-    <!-- Скрипты Telegram и Sortable -->
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/Sortable/1.15.0/Sortable.min.js"></script>
     
     <style>
-        /* Базовые стили, чтобы текст был виден даже при ошибке */
-        body {
-            font-family: sans-serif;
-            margin: 0;
-            padding: 0;
-            background-color: #fff; /* Белый фон по умолчанию */
-            color: #000;
-        }
-        
-        #error-log {
-            display: none;
-            background: #ffebeb;
-            color: #d8000c;
-            padding: 20px;
-            margin: 10px;
-            border: 1px solid #d8000c;
-            border-radius: 5px;
-            white-space: pre-wrap;
-            font-family: monospace;
-        }
-
-        /* Твои основные стили */
         :root {
             --tg-theme-bg-color: #ffffff;
             --tg-theme-text-color: #000000;
             --tg-theme-button-color: #3390ec;
             --tg-theme-button-text-color: #ffffff;
             --tg-theme-secondary-bg-color: #f4f4f5;
+            --tg-theme-hint-color: #999999;
         }
 
-        body.loaded {
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, sans-serif;
             background-color: var(--tg-theme-bg-color);
             color: var(--tg-theme-text-color);
+            margin: 0;
+            padding: 0;
             display: flex;
             flex-direction: column;
             height: 100vh;
             overflow: hidden;
+            user-select: none;
         }
 
-        /* Скрываем интерфейс до загрузки, но показываем ошибку */
-        .app-content {
-            display: none;
-        }
-        
-        body.loaded .app-content {
-            display: flex;
-            flex-direction: column;
-            height: 100%;
-            width: 100%;
-        }
-
-        /* --- Колесо --- */
+        /* --- КОЛЕСО --- */
         .wheel-section {
             flex: 0 0 auto;
             display: flex;
             flex-direction: column;
             align-items: center;
             padding: 20px 0;
+            background: var(--tg-theme-bg-color);
+            box-shadow: 0 4px 10px rgba(0,0,0,0.05);
+            z-index: 10;
+        }
+
+        .wheel-container {
             position: relative;
+            width: 300px;
+            height: 300px;
+        }
+
+        canvas {
+            width: 100%;
+            height: 100%;
+            transition: transform 4s cubic-bezier(0.15, 0.80, 0.20, 0.99);
+        }
+
+        .pointer {
+            position: absolute;
+            top: -15px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 16px;
+            height: 32px;
+            background: var(--tg-theme-text-color);
+            clip-path: polygon(50% 100%, 0 0, 100% 0); 
+            z-index: 20;
+            filter: drop-shadow(0 4px 3px rgba(0,0,0,0.3));
+        }
+
+        /* --- СПИСОК --- */
+        .controls-section {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            padding: 15px;
+            background-color: var(--tg-theme-secondary-bg-color);
+            overflow: hidden;
+        }
+
+        .action-bar { display: flex; gap: 10px; margin-bottom: 15px; }
+        
+        /* Основной инпут добавления */
+        .main-input {
+            flex: 1; padding: 12px; border-radius: 12px; 
+            border: 1px solid var(--tg-theme-hint-color);
+            background: var(--tg-theme-bg-color);
+            color: var(--tg-theme-text-color);
+            font-size: 16px; outline: none;
+        }
+
+        .add-btn {
+            width: 44px; height: 44px; border: none; border-radius: 12px;
+            background-color: var(--tg-theme-button-color);
+            color: var(--tg-theme-button-text-color);
+            font-size: 24px; display: flex; align-items: center; justify-content: center;
+            cursor: pointer;
+        }
+
+        .list-container { flex: 1; overflow-y: auto; padding-bottom: 90px; }
+
+        .list-item {
+            display: flex; align-items: center; 
+            background: var(--tg-theme-bg-color);
+            margin-bottom: 8px; padding: 8px 12px; border-radius: 12px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+            min-height: 48px; /* Удобный размер для пальца */
+        }
+
+        /* Стили для ручки перетаскивания (увеличенная зона клика) */
+        .drag-handle {
+            padding: 10px 12px 10px 0; /* Большой отступ справа */
+            cursor: grab; 
+            color: var(--tg-theme-hint-color);
+            font-size: 24px; 
+            display: flex; 
+            align-items: center;
+            touch-action: none; /* Важно для мобильных браузеров */
+        }
+
+        .item-text { 
+            flex: 1; 
+            font-size: 16px; 
+            overflow: hidden; 
+            text-overflow: ellipsis;
+            padding: 5px 0;
+            border-bottom: 1px solid transparent; /* Чтобы не прыгало при редактировании */
+            cursor: text;
+        }
+        
+        /* Инпут редактирования внутри списка */
+        .edit-input {
+            flex: 1;
+            font-size: 16px;
+            padding: 4px 0;
+            border: none;
+            border-bottom: 2px solid var(--tg-theme-button-color);
+            background: transparent;
+            color: var(--tg-theme-text-color);
+            outline: none;
+            width: 100%;
+        }
+
+        .delete-btn {
+            padding: 10px; 
+            color: #ff453a; 
+            font-weight: bold; 
+            font-size: 24px;
+            cursor: pointer; 
+            display: flex; 
+            align-items: center;
+            margin-left: 5px;
+        }
+
+        /* --- КНОПКА START --- */
+        .spin-btn-container {
+            position: fixed; bottom: 20px; left: 50%;
+            transform: translateX(-50%); width: 90%; max-width: 400px; z-index: 100;
+        }
+
+        .spin-btn {
+            width: 100%; padding: 16px; border: none; border-radius: 16px;
+            background-color: var(--tg-theme-button-color);
+            color: var(--tg-theme-button-text-color);
+            font-size: 18px; font-weight: bold; text-transform: uppercase;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+            transition: transform 0.1s;
+        }
+        .spin-btn:active { transform: scale(0.98); }
+        .spin-btn:disabled { opacity: 0.7; transform: none; }
+
+        /* --- МОДАЛЬНОЕ ОКНО --- */
+        .modal {
+            display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.6); z-index: 1000; justify-content: center; align-items: center;
+            opacity: 0; transition: opacity 0.2s;
+        }
+        .modal.visible { opacity: 1; display: flex; }
+        
+        .modal-content {
+            background: #222;
+            color: #fff;
+            padding: 30px; border-radius: 24px; text-align: center; width: 80%;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+            transform: scale(0.8); transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
+        .modal.visible .modal-content { transform: scale(1); }
+        
+        .winner-label { font-size: 14px; text-transform: uppercase; color: #aaa; margin-bottom: 10px; }
+        .winner-text { font-size: 28px; font-weight: 800; margin-bottom: 20px; color: #4ECDC4; }
+        
+        .modal-btn {
+            background: #fff; color: #000; border: none; padding: 12px 30px;
+            border-radius: 12px; font-weight: bold; font-size: 16px; cursor: pointer;
+        }
+
+    </style>
+</head>
+<body>
+
+    <div class="wheel-section">
+        <div class="wheel-container">
+            <div class="pointer"></div>
+            <canvas id="wheel" width="800" height="800"></canvas>
+        </div>
+    </div>
+
+    <div class="controls-section">
+        <div class="action-bar">
+            <input type="text" id="itemInput" class="main-input" placeholder="Добавить вариант..." onkeypress="handleEnter(event)">
+            <button class="add-btn" onclick="addItem()">+</button>
+        </div>
+        <div class="list-container" id="listContainer"></div>
+    </div>
+
+    <div class="spin-btn-container">
+        <button class="spin-btn" id="spinBtn" onclick="spinWheel()">КРУТИТЬ!</button>
+    </div>
+
+    <div class="modal" id="resultModal" onclick="closeModal()">
+        <div class="modal-content" onclick="event.stopPropagation()">
+            <div class="winner-label">Победитель</div>
+            <div class="winner-text" id="winnerText"></div>
+            <button class="modal-btn" onclick="closeModal()">Супер!</button>
+        </div>
+    </div>
+
+    <script>
+        const tg = window.Telegram.WebApp;
+        tg.expand();
+
+        const COLORS = [
+            '#FF6B6B', '#4ECDC4', '#45B7D1', '#FFA07A', '#98FB98', 
+            '#DDA0DD', '#FFD700', '#FF8C00', '#A0522D', '#87CEEB'
+        ];
+
+        let state = {
+            items: [],
+            rotation: 0
+        };
+
+        const canvas = document.getElementById('wheel');
+        const ctx = canvas.getContext('2d');
+        const listContainer = document.getElementById('listContainer');
+        // Переменная для отслеживания редактируемого элемента
+        let editingIndex = -1;
+
+        function loadState() {
+            try {
+                const saved = localStorage.getItem('wheel_state_v2');
+                if (saved) {
+                    state = JSON.parse(saved);
+                } else {
+                    state.items = [
+                        { id: 1, text: 'Да ✅' },
+                        { id: 2, text: 'Нет ❌' },
+                        { id: 3, text: 'Может быть 🤔' }
+                    ];
+                }
+            } catch (e) {
+                state.items = [];
+            }
+            renderList();
+            drawWheel();
+        }
+
+        function saveState() {
+            localStorage.setItem('wheel_state_v2', JSON.stringify(state));
+            drawWheel();
+        }
+
+        // --- ЛОГИКА КОЛЕСА ---
+        function getContrastColor(hex) {
+            const r = parseInt(hex.substr(1, 2), 16);
+            const g = parseInt(hex.substr(3, 2), 16);
+            const b = parseInt(hex.substr(5, 2), 16);
+            const yiq = ((r * 299) + (g * 587) + (b * 114)) / 1000;
+            return (yiq >= 128) ? '#000000' : '#ffffff';
+        }
+
+        function drawWheel() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            const fullRadius = canvas.width / 2;
+            const r = fullRadius - 25; 
+            const cx = fullRadius;
+            const cy = fullRadius;
+
+            if (state.items.length === 0) {
+                drawEmptyState(cx, cy, r);
+                return;
+            }
+
+            const arc = (2 * Math.PI) / state.items.length;
+
+            state.items.forEach((item, i) => {
+                const angle = i * arc;
+                const color = COLORS[i % COLORS.length];
+
+                ctx.beginPath();
+                ctx.fillStyle = color;
+                ctx.moveTo(cx, cy);
+                ctx.arc(cx, cy, r, angle, angle + arc);
+                ctx.lineTo(cx, cy);
+                ctx.fill();
+
+                ctx.strokeStyle = "rgba(0,0,0,0.1)";
+                ctx.lineWidth = 2;
+                ctx.stroke();
+
+                ctx.save();
+                ctx.translate(cx, cy);
+                ctx.rotate(angle + arc / 2);
+                ctx.textAlign = "right";
+                ctx.fillStyle = getContrastColor(color);
+                ctx.font = "bold 32px -apple-system, BlinkMacSystemFont, Arial";
+                ctx.shadowColor = "rgba(0,0,0,0.2)";
+                ctx.shadowBlur = 4;
+
+                let displayText = item.text;
+                if (displayText.length > 18) displayText = displayText.substring(0, 17) + '..';
+                
+                ctx.fillText(displayText, r - 50, 12);
+                ctx.restore();
+            });
+        }
+
+        function drawEmptyState(cx, cy, r) {
+            ctx.beginPath();
+            ctx.fillStyle = "#f0f0f0";
+            ctx.arc(cx, cy, r, 0, 2 * Math.PI);
+            ctx.fill();
+            
+            ctx.strokeStyle = "#ddd";
+            ctx.lineWidth = 10;
+            ctx.stroke();
+            
+            ctx.fillStyle = "#999";
+            ctx.font = "bold 40px sans-serif";
+            ctx.textAlign = "center";
+            ctx.textBaseline = "middle";
+            ctx.fillText("Пусто", cx, cy - 20);
+            ctx.font = "30px sans-serif";
+            ctx.fillText("Добавьте варианты", cx, cy + 30);
+        }
+
+        // --- ЛОГИКА СПИСКА И РЕДАКТИРОВАНИЯ ---
+        function renderList() {
+            listContainer.innerHTML = '';
+            
+            state.items.forEach((item, index) => {
+                const color = COLORS[index % COLORS.length];
+                const div = document.createElement('div');
+                div.className = 'list-item';
+                
+                // Если элемент сейчас редактируется
+                if (editingIndex === index) {
+                    div.innerHTML = `
+                        <div class="drag-handle">≡</div>
+                        <div style="width:16px;height:16px;border-radius:50%;background:${color};margin-right:12px;flex-shrink:0;"></div>
+                        <input type="text" class="edit-input" id="edit-input-${index}" value="${item.text.replace(/"/g, '&quot;')}" 
+                            onblur="finishEdit(${index})" onkeydown="handleEditKey(event, ${index})">
+                        <div class="delete-btn" onclick="removeItem(${index})">×</div>
+                    `;
+                } else {
+                    // Обычное состояние
+                    div.innerHTML = `
+                        <div class="drag-handle">≡</div>
+                        <div style="width:16px;height:16px;border-radius:50%;background:${color};margin-right:12px;flex-shrink:0;"></div>
+                        <div class="item-text" onclick="startEdit(${index})">${item.text}</div>
+                        <div class="delete-btn" onclick="removeItem(${index})">×</div>
+                    `;
+                }
+                listContainer.appendChild(div);
+                
+                // Автофокус при редактировании
+                if (editingIndex === index) {
+                    const inp = document.getElementById(`edit-input-${index}`);
+                    setTimeout(() => inp.focus(), 10);
+                }
+            });
+        }
+
+        function startEdit(index) {
+            editingIndex = index;
+            renderList();
+        }
+
+        function finishEdit(index) {
+            const inp = document.getElementById(`edit-input-${index}`);
+            // Если инпута нет (например, удалили элемент во время редактирования), выходим
+            if (!inp) {
+                editingIndex = -1;
+                renderList();
+                return;
+            }
+            
+            const newVal = inp.value.trim();
+            if (newVal) {
+                state.items[index].text = newVal;
+                saveState();
+            }
+            editingIndex = -1;
+            renderList();
+        }
+
+        function handleEditKey(e, index) {
+            if (e.key === 'Enter') {
+                e.preventDefault(); // Чтобы не сработал сабмит формы если она есть
+                finishEdit(index);
+            }
+        }
+
+        new Sortable(listContainer, {
+            handle: '.drag-handle',
+            animation: 150,
+            onEnd: function (evt) {
+                const item = state.items[evt.oldIndex];
+                state.items.splice(evt.oldIndex, 1);
+                state.items.splice(evt.newIndex, 0, item);
+                saveState();
+                renderList();
+                tg.HapticFeedback.impactOccurred('light');
+            },
+        });
+
+        function addItem() {
+            const inp = document.getElementById('itemInput');
+            const val = inp.value.trim();
+            if(val) {
+                state.items.push({ id: Date.now(), text: val });
+                inp.value = '';
+                saveState();
+                renderList();
+                setTimeout(() => listContainer.scrollTop = listContainer.scrollHeight, 100);
+            }
+        }
+
+        function removeItem(idx) {
+            // Если удаляем элемент, который редактируется
+            if (editingIndex === idx) editingIndex = -1;
+            // Если удаляем элемент выше редактируемого, смещаем индекс
+            else if (editingIndex > idx) editingIndex--;
+            
+            state.items.splice(idx, 1);
+            saveState();
+            renderList();
+            tg.HapticFeedback.impactOccurred('medium');
+        }
+
+        function handleEnter(e) {
+            if(e.key === 'Enter') addItem();
+        }
+
+        // --- ЛОГИКА ВРАЩЕНИЯ ---
+        function spinWheel() {
+            if (state.items.length < 2) {
+                tg.showAlert("Нужно минимум 2 варианта!");
+                return;
+            }
+            
+            const btn = document.getElementById('spinBtn');
+            btn.disabled = true;
+            tg.HapticFeedback.impactOccurred('heavy');
+
+            const extraSpins = 360 * 5;
+            const randomDeg = Math.floor(Math.random() * 360);
+            const total = extraSpins + randomDeg;
+            
+            state.rotation += total;
+            canvas.style.transform = `rotate(${state.rotation}deg)`;
+
+            setTimeout(() => {
+                const actualDeg = state.rotation % 360;
+                const degPerSlice = 360 / state.items.length;
+                const index = Math.floor((360 - actualDeg + 270) % 360 / degPerSlice);
+                const winner = state.items[index % state.items.length];
+                
+                showResult(winner.text);
+                btn.disabled = false;
+                tg.HapticFeedback.notificationOccurred('success');
+            }, 4000);
+        }
+
+        function showResult(text) {
+            document.getElementById('winnerText').innerText = text;
+            const modal = document.getElementById('resultModal');
+            modal.style.display = 'flex';
+            setTimeout(() => modal.classList.add('visible'), 10);
+        }
+
+        function closeModal() {
+            const modal = document.getElementById('resultModal');
+            modal.classList.remove('visible');
+            setTimeout(() => modal.style.display = 'none', 300);
+        }
+
+        loadState();
+    </script>
+</body>
+</html><!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Колесо Фортуны</title>
+    <!-- Telegram WebApp API -->
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <!-- SortableJS для перетаскивания -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Sortable/1.15.0/Sortable.min.js"></script>
+    
+    <style>
+        :root {
+            /* Базовые переменные, переопределяются темой Telegram */
+            --tg-theme-bg-color: #ffffff;
+            --tg-theme-text-color: #000000;
+            --tg-theme-hint-color: #999999;
+            --tg-theme-link-color: #2481cc;
+            --tg-theme-button-color: #3390ec;
+            --tg-theme-button-text-color: #ffffff;
+            --tg-theme-secondary-bg-color: #f4f4f5;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            background-color: var(--tg-theme-bg-color);
+            color: var(--tg-theme-text-color);
+            margin: 0;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            overflow: hidden; /* Скроллим только список */
+        }
+
+        /* --- Верхняя часть: Колесо --- */
+        .wheel-section {
+            flex: 0 0 auto;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 20px 0;
+            background-color: var(--tg-theme-bg-color);
+            border-bottom: 1px solid var(--tg-theme-hint-color);
+            position: relative;
+            z-index: 10;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
         }
 
         .wheel-container {
@@ -97,270 +570,479 @@
             background: var(--tg-theme-text-color);
             clip-path: polygon(50% 100%, 0 0, 100% 0);
             z-index: 20;
+            filter: drop-shadow(0 2px 2px rgba(0,0,0,0.3));
         }
 
-        /* --- Управление --- */
+        /* --- Нижняя часть: Список и Управление --- */
         .controls-section {
             flex: 1;
             display: flex;
             flex-direction: column;
             padding: 15px;
             background-color: var(--tg-theme-secondary-bg-color);
-            overflow-y: hidden;
+            overflow: hidden;
         }
 
-        .action-bar { display: flex; gap: 10px; margin-bottom: 15px; }
-        
-        input {
-            flex: 1; padding: 12px; border-radius: 12px; border: 1px solid #ccc;
-            font-size: 16px; outline: none;
+        .action-bar {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 15px;
         }
 
-        .add-btn {
-            padding: 0 20px; border: none; border-radius: 12px;
+        input[type="text"] {
+            flex: 1;
+            padding: 12px;
+            border-radius: 12px;
+            border: 1px solid var(--tg-theme-hint-color);
+            background: var(--tg-theme-bg-color);
+            color: var(--tg-theme-text-color);
+            font-size: 16px;
+            outline: none;
+        }
+
+        button.add-btn {
+            padding: 0 20px;
+            border: none;
+            border-radius: 12px;
             background-color: var(--tg-theme-button-color);
             color: var(--tg-theme-button-text-color);
+            font-weight: bold;
             font-size: 20px;
+            cursor: pointer;
         }
 
-        .list-container { flex: 1; overflow-y: auto; padding-bottom: 80px; }
+        .list-container {
+            flex: 1;
+            overflow-y: auto;
+            padding-bottom: 80px; /* Место под кнопку Spin */
+        }
 
         .list-item {
-            display: flex; align-items: center; background: var(--tg-theme-bg-color);
-            margin-bottom: 8px; padding: 10px; border-radius: 10px;
+            display: flex;
+            align-items: center;
+            background: var(--tg-theme-bg-color);
+            margin-bottom: 8px;
+            padding: 10px;
+            border-radius: 10px;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+            animation: slideIn 0.3s ease;
         }
 
+        @keyframes slideIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .drag-handle {
+            padding: 0 10px;
+            cursor: grab;
+            color: var(--tg-theme-hint-color);
+            display: flex;
+            align-items: center;
+        }
+
+        .color-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            margin-right: 10px;
+            border: 1px solid rgba(0,0,0,0.1);
+        }
+
+        .item-text {
+            flex: 1;
+            font-size: 16px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .delete-btn {
+            padding: 5px 10px;
+            color: #ff453a;
+            font-weight: bold;
+            font-size: 20px;
+            cursor: pointer;
+        }
+
+        /* --- Главная кнопка --- */
         .spin-btn-container {
-            position: fixed; bottom: 20px; left: 50%;
-            transform: translateX(-50%); width: 90%; max-width: 400px;
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 90%;
+            max-width: 400px;
+            z-index: 100;
         }
 
         .spin-btn {
-            width: 100%; padding: 16px; border: none; border-radius: 16px;
+            width: 100%;
+            padding: 16px;
+            border: none;
+            border-radius: 16px;
             background-color: var(--tg-theme-button-color);
             color: var(--tg-theme-button-text-color);
-            font-size: 18px; font-weight: bold; text-transform: uppercase;
+            font-size: 18px;
+            font-weight: bold;
+            text-transform: uppercase;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+            cursor: pointer;
+            transition: transform 0.1s;
+        }
+
+        .spin-btn:active {
+            transform: scale(0.98);
+        }
+
+        .spin-btn:disabled {
+            opacity: 0.7;
+            cursor: not-allowed;
+        }
+
+        /* Модальное окно результата */
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.5);
+            z-index: 1000;
+            justify-content: center;
+            align-items: center;
+            opacity: 0;
+            transition: opacity 0.3s;
         }
         
-        /* Модальное окно */
-        .modal {
-            display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-            background: rgba(0,0,0,0.5); z-index: 1000; justify-content: center; align-items: center;
+        .modal.visible {
+            opacity: 1;
         }
-        .modal.visible { display: flex; }
+
         .modal-content {
-            background: #fff; padding: 30px; border-radius: 20px; text-align: center; width: 80%;
+            background: var(--tg-theme-bg-color);
+            padding: 30px;
+            border-radius: 20px;
+            text-align: center;
+            width: 80%;
+            transform: scale(0.8);
+            transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
         }
+
+        .modal.visible .modal-content {
+            transform: scale(1);
+        }
+
+        .winner-text {
+            font-size: 24px;
+            font-weight: bold;
+            margin: 20px 0;
+            word-wrap: break-word;
+        }
+
+        /* Темы колеса */
+        .theme-selector {
+            display: flex;
+            justify-content: center;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+        
+        .theme-dot {
+            width: 20px; height: 20px; border-radius: 50%; cursor: pointer;
+            border: 2px solid transparent;
+        }
+        .theme-dot.active { border-color: var(--tg-theme-text-color); }
+
     </style>
 </head>
 <body>
 
-    <!-- Блок для отображения ошибок -->
-    <div id="error-log"></div>
-    <div id="loading-msg" style="text-align: center; padding: 50px; font-size: 20px; color: #666;">
-        Загрузка приложения...<br>
-        <small>Если этот текст висит долго, проверьте консоль.</small>
+    <div class="wheel-section">
+        <div class="theme-selector" id="themeSelector">
+            <!-- Генерируется JS -->
+        </div>
+        <div class="wheel-container">
+            <div class="pointer"></div>
+            <canvas id="wheel" width="600" height="600"></canvas>
+        </div>
     </div>
 
-    <!-- Основной контент -->
-    <div class="app-content" id="app">
-        <div class="wheel-section">
-            <div class="wheel-container">
-                <div class="pointer"></div>
-                <canvas id="wheel" width="600" height="600"></canvas>
-            </div>
+    <div class="controls-section">
+        <div class="action-bar">
+            <input type="text" id="itemInput" placeholder="Добавить вариант..." onkeypress="handleEnter(event)">
+            <button class="add-btn" onclick="addItem()">+</button>
         </div>
+        <div class="list-container" id="listContainer">
+            <!-- Список генерируется JS -->
+        </div>
+    </div>
 
-        <div class="controls-section">
-            <div class="action-bar">
-                <input type="text" id="itemInput" placeholder="Добавить вариант..." onkeypress="handleEnter(event)">
-                <button class="add-btn" onclick="addItem()">+</button>
-            </div>
-            <div class="list-container" id="listContainer"></div>
-        </div>
+    <div class="spin-btn-container">
+        <button class="spin-btn" id="spinBtn" onclick="spinWheel()">КРУТИТЬ!</button>
+    </div>
 
-        <div class="spin-btn-container">
-            <button class="spin-btn" id="spinBtn" onclick="spinWheel()">КРУТИТЬ!</button>
-        </div>
-        
-        <div class="modal" id="resultModal" onclick="closeModal()">
-            <div class="modal-content" onclick="event.stopPropagation()">
-                <h2>🎉 Победитель!</h2>
-                <h3 id="winnerText"></h3>
-                <button class="spin-btn" style="width: auto; margin-top: 10px;" onclick="closeModal()">OK</button>
-            </div>
+    <!-- Модальное окно -->
+    <div class="modal" id="resultModal" onclick="closeModal()">
+        <div class="modal-content" onclick="event.stopPropagation()">
+            <h2>🎉 Победитель!</h2>
+            <div class="winner-text" id="winnerText"></div>
+            <button class="spin-btn" style="width: auto; padding: 10px 30px;" onclick="closeModal()">OK</button>
         </div>
     </div>
 
     <script>
-        // Перехват ошибок
-        window.onerror = function(msg, url, lineNo, columnNo, error) {
-            const log = document.getElementById('error-log');
-            log.style.display = 'block';
-            log.innerHTML += `🔴 Error: ${msg}\nLine: ${lineNo}\nURL: ${url}\n\n`;
-            document.getElementById('loading-msg').style.display = 'none';
-            return false;
+        // --- 1. Инициализация и Конфигурация ---
+        const tg = window.Telegram.WebApp;
+        tg.expand();
+
+        // Цветовые палитры
+        const PALETTES = {
+            'rainbow': ['#FF6B6B', '#FFD93D', '#6BCB77', '#4D96FF', '#9B59B6'],
+            'pastel': ['#FFB7B2', '#FFDAC1', '#E2F0CB', '#B5EAD7', '#C7CEEA'],
+            'neon': ['#FF0099', '#493240', '#00F0FF', '#7B00FF', '#00FF00'],
+            'dark': ['#2C3E50', '#E74C3C', '#ECF0F1', '#3498DB', '#F1C40F']
         };
 
-        try {
-            // --- Твой основной код ---
-            const tg = window.Telegram.WebApp;
-            tg.expand();
+        // Состояние приложения
+        let state = {
+            items: [],
+            currentTheme: 'rainbow',
+            rotation: 0
+        };
 
-            // Данные
-            const PALETTES = {
-                'rainbow': ['#FF6B6B', '#FFD93D', '#6BCB77', '#4D96FF', '#9B59B6'],
-            };
-            
-            let state = {
-                items: [],
-                rotation: 0
-            };
+        const canvas = document.getElementById('wheel');
+        const ctx = canvas.getContext('2d');
+        const listContainer = document.getElementById('listContainer');
 
-            // Canvas
-            const canvas = document.getElementById('wheel');
-            const ctx = canvas.getContext('2d');
-            const listContainer = document.getElementById('listContainer');
-
-            // Загрузка
-            function loadState() {
-                try {
-                    const saved = localStorage.getItem('wheel_state_v1');
-                    if (saved) {
-                        state = JSON.parse(saved);
-                    } else {
-                        state.items = [
-                            { id: 1, text: 'Пицца 🍕' },
-                            { id: 2, text: 'Суши 🍣' },
-                            { id: 3, text: 'Бургеры 🍔' }
-                        ];
-                    }
-                    if (!state.items) state.items = [];
-                } catch (e) {
-                    console.error("Save load error", e);
-                    state.items = [{ id: 1, text: 'Ошибка загрузки' }];
-                }
-                renderList();
-                drawWheel();
+        // --- 2. Управление Данными (Local Storage) ---
+        function loadState() {
+            const saved = localStorage.getItem('wheel_state_v1');
+            if (saved) {
+                state = JSON.parse(saved);
+            } else {
+                // Демо-данные
+                state.items = [
+                    { id: 1, text: 'Пицца 🍕' },
+                    { id: 2, text: 'Суши 🍣' },
+                    { id: 3, text: 'Бургеры 🍔' },
+                    { id: 4, text: 'Салат 🥗' },
+                    { id: 5, text: 'Шаверма 🥙' }
+                ];
             }
+            renderThemeSelector();
+            renderList();
+            drawWheel();
+        }
 
-            function saveState() {
-                localStorage.setItem('wheel_state_v1', JSON.stringify(state));
-                drawWheel();
-            }
+        function saveState() {
+            localStorage.setItem('wheel_state_v1', JSON.stringify(state));
+            drawWheel(); // Перерисовываем колесо при любом изменении данных
+        }
 
-            // Рендер
-            function renderList() {
-                listContainer.innerHTML = '';
-                const palette = PALETTES['rainbow'];
+        // --- 3. Логика Списка и SortableJS ---
+        function renderList() {
+            listContainer.innerHTML = '';
+            const palette = PALETTES[state.currentTheme];
+
+            state.items.forEach((item, index) => {
+                const color = palette[index % palette.length];
                 
-                state.items.forEach((item, index) => {
-                    const color = palette[index % palette.length];
-                    const div = document.createElement('div');
-                    div.className = 'list-item';
-                    div.innerHTML = `
-                        <div style="width:12px;height:12px;border-radius:50%;background:${color};margin-right:10px;"></div>
-                        <div style="flex:1">${item.text}</div>
-                        <div style="color:red;padding:5px;" onclick="removeItem(${index})">×</div>
-                    `;
-                    listContainer.appendChild(div);
-                });
-            }
+                const el = document.createElement('div');
+                el.className = 'list-item';
+                el.dataset.id = item.id;
+                el.innerHTML = `
+                    <div class="drag-handle">☰</div>
+                    <div class="color-dot" style="background-color: ${color}"></div>
+                    <div class="item-text">${item.text}</div>
+                    <div class="delete-btn" onclick="removeItem(${index})">×</div>
+                `;
+                listContainer.appendChild(el);
+            });
+        }
 
-            // Колесо
-            function drawWheel() {
-                if (state.items.length === 0) {
-                    ctx.clearRect(0, 0, canvas.width, canvas.height);
-                    return;
-                }
-                const arc = (2 * Math.PI) / state.items.length;
-                const r = canvas.width / 2;
-                const palette = PALETTES['rainbow'];
+        // Инициализация Drag & Drop
+        new Sortable(listContainer, {
+            handle: '.drag-handle',
+            animation: 150,
+            ghostClass: 'sortable-ghost',
+            onEnd: function (evt) {
+                // Синхронизируем массив state.items с новым порядком DOM
+                const itemEl = state.items[evt.oldIndex];
+                state.items.splice(evt.oldIndex, 1);
+                state.items.splice(evt.newIndex, 0, itemEl);
+                saveState();
+                renderList(); // Чтобы обновить цвета по порядку
+                tg.HapticFeedback.impactOccurred('light');
+            },
+        });
 
+        function addItem() {
+            const input = document.getElementById('itemInput');
+            const text = input.value.trim();
+            if (!text) return;
+
+            state.items.push({
+                id: Date.now(),
+                text: text
+            });
+            input.value = '';
+            saveState();
+            renderList();
+            tg.HapticFeedback.impactOccurred('medium');
+            
+            // Скролл вниз
+            setTimeout(() => listContainer.scrollTop = listContainer.scrollHeight, 100);
+        }
+
+        function removeItem(index) {
+            state.items.splice(index, 1);
+            saveState();
+            renderList();
+            tg.HapticFeedback.impactOccurred('light');
+        }
+
+        function handleEnter(e) {
+            if (e.key === 'Enter') addItem();
+        }
+
+        // --- 4. Логика Колеса ---
+        function drawWheel() {
+            if (state.items.length === 0) {
                 ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-                state.items.forEach((item, i) => {
-                    const angle = i * arc;
-                    ctx.beginPath();
-                    ctx.fillStyle = palette[i % palette.length];
-                    ctx.moveTo(r, r);
-                    ctx.arc(r, r, r, angle, angle + arc);
-                    ctx.lineTo(r, r);
-                    ctx.fill();
-
-                    ctx.save();
-                    ctx.translate(r, r);
-                    ctx.rotate(angle + arc / 2);
-                    ctx.textAlign = "right";
-                    ctx.fillStyle = "#fff";
-                    ctx.font = "bold 24px sans-serif";
-                    ctx.fillText(item.text.substring(0, 15), r - 20, 10);
-                    ctx.restore();
-                });
+                return;
             }
 
-            // Функции
-            window.addItem = function() {
-                const inp = document.getElementById('itemInput');
-                if(inp.value.trim()) {
-                    state.items.push({ id: Date.now(), text: inp.value.trim() });
-                    inp.value = '';
+            const arc = (2 * Math.PI) / state.items.length;
+            const radius = canvas.width / 2;
+            const cx = radius;
+            const cy = radius;
+            const palette = PALETTES[state.currentTheme];
+
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            state.items.forEach((item, i) => {
+                const angle = i * arc;
+                const color = palette[i % palette.length];
+
+                ctx.beginPath();
+                ctx.fillStyle = color;
+                ctx.moveTo(cx, cy);
+                ctx.arc(cx, cy, radius, angle, angle + arc);
+                ctx.lineTo(cx, cy);
+                ctx.fill();
+
+                // Текст
+                ctx.save();
+                ctx.translate(cx, cy);
+                ctx.rotate(angle + arc / 2);
+                ctx.textAlign = "right";
+                ctx.fillStyle = "#fff";
+                ctx.font = "bold 28px sans-serif";
+                ctx.shadowColor = "rgba(0,0,0,0.3)";
+                ctx.shadowBlur = 4;
+                
+                // Обрезаем длинный текст
+                let text = item.text;
+                if (text.length > 15) text = text.substring(0, 14) + '..';
+                
+                ctx.fillText(text, radius - 30, 10);
+                ctx.restore();
+            });
+        }
+
+        // --- 5. Темы ---
+        function renderThemeSelector() {
+            const container = document.getElementById('themeSelector');
+            container.innerHTML = '';
+            Object.keys(PALETTES).forEach(key => {
+                const dot = document.createElement('div');
+                dot.className = `theme-dot ${key === state.currentTheme ? 'active' : ''}`;
+                dot.style.background = `linear-gradient(45deg, ${PALETTES[key][0]}, ${PALETTES[key][2]})`;
+                dot.onclick = () => {
+                    state.currentTheme = key;
                     saveState();
                     renderList();
-                }
-            };
-
-            window.removeItem = function(idx) {
-                state.items.splice(idx, 1);
-                saveState();
-                renderList();
-            };
-
-            window.handleEnter = function(e) {
-                if(e.key === 'Enter') addItem();
-            };
-
-            window.spinWheel = function() {
-                 if (state.items.length < 2) {
-                    tg.showAlert("Добавьте вариантов!");
-                    return;
-                }
-                const btn = document.getElementById('spinBtn');
-                btn.disabled = true;
-                
-                // Вращение
-                const extra = 360 * 5;
-                const rand = Math.floor(Math.random() * 360);
-                state.rotation += extra + rand;
-                canvas.style.transform = `rotate(${state.rotation}deg)`;
-
-                setTimeout(() => {
-                    const degPerSlice = 360 / state.items.length;
-                    const actualDeg = state.rotation % 360;
-                    // Считаем победителя (учитывая что стрелка сверху)
-                    const index = Math.floor((360 - actualDeg + 270) % 360 / degPerSlice) % state.items.length;
-                    
-                    document.getElementById('winnerText').innerText = state.items[index].text;
-                    document.getElementById('resultModal').classList.add('visible');
-                    tg.HapticFeedback.notificationOccurred('success');
-                    btn.disabled = false;
-                }, 4000);
-            };
-
-            window.closeModal = function() {
-                document.getElementById('resultModal').classList.remove('visible');
-            };
-
-            // Запуск
-            loadState();
-            
-            // Если дошли сюда - убираем лоадер и показываем приложение
-            document.body.classList.add('loaded');
-            document.getElementById('loading-msg').style.display = 'none';
-
-        } catch (err) {
-            throw err; // Перебрасываем в window.onerror
+                    renderThemeSelector();
+                };
+                container.appendChild(dot);
+            });
         }
+
+        // --- 6. Вращение ---
+        function spinWheel() {
+            if (state.items.length < 2) {
+                tg.showAlert("Добавьте хотя бы 2 варианта!");
+                return;
+            }
+
+            const btn = document.getElementById('spinBtn');
+            btn.disabled = true;
+            tg.HapticFeedback.impactOccurred('heavy');
+
+            // Расчет случайного угла: минимум 5 оборотов + рандом
+            const extraSpins = 360 * 5;
+            const randomDegree = Math.floor(Math.random() * 360);
+            const totalRotation = extraSpins + randomDegree;
+            
+            // Накапливаем вращение, чтобы не крутилось назад
+            state.rotation += totalRotation;
+            canvas.style.transform = `rotate(${state.rotation}deg)`;
+
+            // Звук "трещотки" (имитация хаптикой)
+            // В браузере это сложно синхронизировать идеально без WebAudio API,
+            // но сделаем простой хак с таймерами для вибрации
+            let duration = 4000;
+            // let interval = 50;
+            // const hapticInterval = setInterval(() => {
+            //     tg.HapticFeedback.selectionChanged();
+            //     interval = interval * 1.1; // Замедляем трещотку
+            // }, interval);
+
+            setTimeout(() => {
+                // clearInterval(hapticInterval);
+                finishSpin(state.rotation);
+                btn.disabled = false;
+            }, duration);
+        }
+
+        function finishSpin(actualRotation) {
+            const degreesPerSlice = 360 / state.items.length;
+            
+            // Нормализуем угол (остаток от деления на 360)
+            // Стрелка находится сверху (270deg или -90deg в системе координат Canvas)
+            // Но CSS rotate вращает ПО часовой.
+            // Формула: (360 - (текущий_угол % 360) + 90_сдвиг_стрелки) % 360
+            // Примечание: У нас стрелка CSS визуально сверху, 
+            // а 0 градусов Canvas справа. Сдвиг 270.
+            
+            const normalizedRotation = actualRotation % 360;
+            const indexCalc = Math.floor((360 - normalizedRotation + 270) % 360 / degreesPerSlice);
+            
+            // Защита от выхода за границы массива (из-за плавающей точки)
+            const safeIndex = indexCalc % state.items.length;
+            const winner = state.items[safeIndex];
+
+            showResult(winner.text);
+            tg.HapticFeedback.notificationOccurred('success');
+        }
+
+        // --- 7. Модальное окно ---
+        const modal = document.getElementById('resultModal');
+        function showResult(text) {
+            document.getElementById('winnerText').textContent = text;
+            modal.style.display = 'flex';
+            setTimeout(() => modal.classList.add('visible'), 10);
+            
+            // Эффект конфетти (опционально, здесь просто хаптик)
+        }
+
+        function closeModal() {
+            modal.classList.remove('visible');
+            setTimeout(() => modal.style.display = 'none', 300);
+        }
+
+        // Старт
+        loadState();
+
     </script>
 </body>
 </html>
